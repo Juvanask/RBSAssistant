@@ -83,6 +83,9 @@ import subprocess
 from retrieval import Retriever
 from generator import RAGGenerator
 
+# ✅ MUST be first Streamlit call
+st.set_page_config(page_title="RBS Student Life Assistant", page_icon="🛡️")
+
 INDEX_FILE = "output/vector_index.faiss"
 
 @st.cache_resource
@@ -94,11 +97,8 @@ def setup_index():
                 capture_output=True,
                 text=True
             )
-            
-            # 🔥 SHOW LOGS
             st.text("STDOUT:\n" + result.stdout)
             st.text("STDERR:\n" + result.stderr)
-
             if result.returncode != 0:
                 st.error("ingest.py FAILED ❌")
                 st.stop()
