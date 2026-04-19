@@ -2,7 +2,7 @@ import os
 import pickle
 import numpy as np
 import faiss
-from fastembed import TextEmbedding
+from openai import OpenAI
 
 # ---------- FIXED PATH ----------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -13,7 +13,7 @@ class Retriever:
         self.chunk_data = pickle.load(open(os.path.join(OUTPUT_DIR, "chunked_data.pkl"), "rb"))
         self.bm25 = pickle.load(open(os.path.join(OUTPUT_DIR, "bm25_index.pkl"), "rb"))
         self.faiss_index = faiss.read_index(os.path.join(OUTPUT_DIR, "vector_index.faiss"))
-        self.model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
+        self.client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
     def query_router(self, query):
         q = query.lower()
@@ -55,7 +55,11 @@ class Retriever:
         sparse_top_n = np.argsort(bm25_scores)[::-1][:15]
 
         # 2. Dense Search (FAISS)
-        emb = np.array(list(self.model.embed([query])))
+        response = self.client.embeddings.create(
+            input=[query],
+            model="text-embedding-3-small"
+        )
+        emb = np.array([response.data[0].embedding])
         distances, dense_top_n = self.faiss_index.search(emb, 15)
         dense_top_n = dense_top_n[0]
 

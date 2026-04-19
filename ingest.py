@@ -3,7 +3,7 @@ import re
 import json
 import pickle
 from glob import glob
-from fastembed import TextEmbedding
+from openai import OpenAI
 import faiss
 import numpy as np
 from rank_bm25 import BM25Okapi
@@ -13,7 +13,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 
-model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 def setup_output_dir():
     if not os.path.exists(OUTPUT_DIR):
@@ -111,6 +111,19 @@ def chunk_text(text, chunk_size=300, overlap=50):
             chunks.append(chunk)
     return chunks
 
+def get_embeddings(texts, batch_size=100):
+    all_embeddings = []
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i+batch_size]
+        response = client.embeddings.create(
+            input=batch,
+            model="text-embedding-3-small"
+        )
+        batch_embeddings = [item.embedding for item in response.data]
+        all_embeddings.extend(batch_embeddings)
+        print(f"Embedded batch {i//batch_size + 1} / {(len(texts)-1)//batch_size + 1}")
+    return np.array(all_embeddings)
+
 def build_index(all_docs):
     chunked_data = []
     for doc in all_docs:
@@ -126,17 +139,15 @@ def build_index(all_docs):
     
     print(f"Total chunks generated: {len(chunked_data)}")
     
-    # 1. FAISS Index (Dense)
-    print("Computing embeddings via fastembed...")
+    print("Computing embeddings via OpenAI...")
     texts_to_embed = [item["metadata_prefix"] + item["text"] for item in chunked_data]
-    embeddings = np.array(list(model.embed(texts_to_embed)))
+    embeddings = get_embeddings(texts_to_embed)
     
     dimension = embeddings.shape[1]
     faiss_index = faiss.IndexFlatL2(dimension)
     faiss_index.add(embeddings)
     faiss.write_index(faiss_index, os.path.join(OUTPUT_DIR, "vector_index.faiss"))
     
-    # 2. BM25 Index (Sparse)
     tokenized_corpus = [text.lower().split() for text in texts_to_embed]
     bm25 = BM25Okapi(tokenized_corpus)
     
