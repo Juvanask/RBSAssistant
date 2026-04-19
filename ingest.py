@@ -1,9 +1,185 @@
+# import os
+# import re
+# import json
+# import pickle
+# from glob import glob
+# from openai import OpenAI
+# import faiss
+# import numpy as np
+# from rank_bm25 import BM25Okapi
+
+# # ---------- FIXED PATHS ----------
+# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# DATA_DIR = os.path.join(BASE_DIR, "data")
+# OUTPUT_DIR = os.path.join(BASE_DIR, "output")
+
+# client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
+# def setup_output_dir():
+#     if not os.path.exists(OUTPUT_DIR):
+#         os.makedirs(OUTPUT_DIR)
+
+# def parse_file(filepath):
+#     with open(filepath, 'r', encoding='utf-8') as f:
+#         content = f.read()
+
+#     blocks = content.split("========================================================================")
+    
+#     documents = []
+#     top_header = blocks[0]
+#     category_match = re.search(r'# Category:\s*(.*)', top_header)
+#     category = category_match.group(1).strip() if category_match else "general"
+
+#     for block in blocks[1:]:
+#         block = block.strip()
+#         if not block:
+#             continue
+        
+#         section_match = re.search(r'^##\s*(.*?)\n', block)
+#         url_match = re.search(r'URL:\s*(.*?)\n', block)
+#         desc_match = re.search(r'Description:\s*(.*?)\n', block)
+#         title_match = re.search(r'Title:\s*(.*?)\n', block)
+
+#         section = section_match.group(1).strip() if section_match else ""
+#         url = url_match.group(1).strip() if url_match else ""
+#         desc = desc_match.group(1).strip() if desc_match else ""
+#         title = title_match.group(1).strip() if title_match else ""
+        
+#         doc = {
+#             "category": category,
+#             "section": section,
+#             "url": url,
+#             "description": desc,
+#             "title": title,
+#             "raw_text": block
+#         }
+#         documents.append(doc)
+#     return documents
+
+# def extract_structured_data(docs):
+#     contacts = []
+#     events = []
+#     requirements = []
+
+#     for doc in docs:
+#         text = doc["raw_text"]
+#         cat = doc["category"]
+
+#         if cat in ["contacts", "general"]:
+#             emails = re.findall(r'[\w\.-]+@business\.rutgers\.edu', text)
+#             if emails:
+#                 contacts.append({
+#                     "section": doc["section"],
+#                     "title": doc["title"],
+#                     "emails": list(set(emails)),
+#                     "url": doc["url"]
+#                 })
+        
+#         if cat == "events":
+#             dates = re.findall(r'[A-Z][a-z]{2}\s\d{1,2},\s\d{4}', text)
+#             if dates:
+#                 events.append({
+#                     "title": doc["title"],
+#                     "dates_found": list(set(dates)),
+#                     "url": doc["url"]
+#                 })
+        
+#         if cat == "requirements":
+#             credits_mention = re.findall(r'(\d+)\s*credits', text, re.IGNORECASE)
+#             if credits_mention:
+#                 requirements.append({
+#                     "section": doc["section"],
+#                     "credits_mentioned": credits_mention,
+#                     "url": doc["url"]
+#                 })
+    
+#     with open(os.path.join(OUTPUT_DIR, "contacts.json"), 'w') as f:
+#         json.dump(contacts, f, indent=2)
+#     with open(os.path.join(OUTPUT_DIR, "events.json"), 'w') as f:
+#         json.dump(events, f, indent=2)
+#     with open(os.path.join(OUTPUT_DIR, "requirements.json"), 'w') as f:
+#         json.dump(requirements, f, indent=2)
+    
+#     print(f"Structured data saved! Extracted {len(contacts)} contact blocks, {len(events)} event blocks, {len(requirements)} req blocks.")
+
+# def chunk_text(text, chunk_size=300, overlap=50):
+#     words = text.split()
+#     chunks = []
+#     for i in range(0, len(words), chunk_size - overlap):
+#         chunk = " ".join(words[i:i+chunk_size])
+#         if chunk:
+#             chunks.append(chunk)
+#     return chunks
+
+# def get_embeddings(texts, batch_size=100):
+#     all_embeddings = []
+#     for i in range(0, len(texts), batch_size):
+#         batch = texts[i:i+batch_size]
+#         response = client.embeddings.create(
+#             input=batch,
+#             model="text-embedding-3-small"
+#         )
+#         batch_embeddings = [item.embedding for item in response.data]
+#         all_embeddings.extend(batch_embeddings)
+#         print(f"Embedded batch {i//batch_size + 1} / {(len(texts)-1)//batch_size + 1}")
+#     return np.array(all_embeddings)
+
+# def build_index(all_docs):
+#     chunked_data = []
+#     for doc in all_docs:
+#         chunks = chunk_text(doc["raw_text"])
+#         for c in chunks:
+#             chunked_data.append({
+#                 "category": doc["category"],
+#                 "url": doc["url"],
+#                 "title": doc["title"],
+#                 "text": c,
+#                 "metadata_prefix": f"[{doc['category'].upper()}] {doc['title']} ({doc['url']}):\n"
+#             })
+    
+#     print(f"Total chunks generated: {len(chunked_data)}")
+    
+#     print("Computing embeddings via OpenAI...")
+#     texts_to_embed = [item["metadata_prefix"] + item["text"] for item in chunked_data]
+#     embeddings = get_embeddings(texts_to_embed)
+    
+#     dimension = embeddings.shape[1]
+#     faiss_index = faiss.IndexFlatL2(dimension)
+#     faiss_index.add(embeddings)
+#     faiss.write_index(faiss_index, os.path.join(OUTPUT_DIR, "vector_index.faiss"))
+    
+#     tokenized_corpus = [text.lower().split() for text in texts_to_embed]
+#     bm25 = BM25Okapi(tokenized_corpus)
+    
+#     with open(os.path.join(OUTPUT_DIR, "chunked_data.pkl"), "wb") as f:
+#         pickle.dump(chunked_data, f)
+#     with open(os.path.join(OUTPUT_DIR, "bm25_index.pkl"), "wb") as f:
+#         pickle.dump(bm25, f)
+        
+#     print("Indexes built and saved to /output folder.")
+
+# if __name__ == "__main__":
+#     setup_output_dir()
+    
+#     all_docs = []
+#     files = glob(os.path.join(DATA_DIR, "*.txt"))
+#     for f in files:
+#         docs = parse_file(f)
+#         all_docs.extend(docs)
+        
+#     print(f"Loaded {len(all_docs)} sections across {len(files)} files.")
+    
+#     extract_structured_data(all_docs)
+#     build_index(all_docs)
+
+
+
 import os
 import re
 import json
 import pickle
 from glob import glob
-from openai import OpenAI
+from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
 from rank_bm25 import BM25Okapi
@@ -13,7 +189,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+model = SentenceTransformer('all-MiniLM-L6-v2')
 
 def setup_output_dir():
     if not os.path.exists(OUTPUT_DIR):
@@ -111,19 +287,6 @@ def chunk_text(text, chunk_size=300, overlap=50):
             chunks.append(chunk)
     return chunks
 
-def get_embeddings(texts, batch_size=100):
-    all_embeddings = []
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i:i+batch_size]
-        response = client.embeddings.create(
-            input=batch,
-            model="text-embedding-3-small"
-        )
-        batch_embeddings = [item.embedding for item in response.data]
-        all_embeddings.extend(batch_embeddings)
-        print(f"Embedded batch {i//batch_size + 1} / {(len(texts)-1)//batch_size + 1}")
-    return np.array(all_embeddings)
-
 def build_index(all_docs):
     chunked_data = []
     for doc in all_docs:
@@ -139,9 +302,9 @@ def build_index(all_docs):
     
     print(f"Total chunks generated: {len(chunked_data)}")
     
-    print("Computing embeddings via OpenAI...")
+    print("Computing embeddings via sentence-transformers...")
     texts_to_embed = [item["metadata_prefix"] + item["text"] for item in chunked_data]
-    embeddings = get_embeddings(texts_to_embed)
+    embeddings = model.encode(texts_to_embed, show_progress_bar=True, convert_to_numpy=True)
     
     dimension = embeddings.shape[1]
     faiss_index = faiss.IndexFlatL2(dimension)
