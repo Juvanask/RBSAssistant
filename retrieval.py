@@ -1,10 +1,20 @@
+# import os
+# import pickle
+# import numpy as np
+# import faiss
+# from sentence_transformers import SentenceTransformer
+
+# OUTPUT_DIR = "output"
+
 import os
 import pickle
 import numpy as np
 import faiss
 from sentence_transformers import SentenceTransformer
 
-OUTPUT_DIR = "output"
+# ---------- FIXED PATH ----------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 
 class Retriever:
     def __init__(self):

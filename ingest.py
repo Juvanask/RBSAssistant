@@ -1,3 +1,17 @@
+# import os
+# import re
+# import json
+# import pickle
+# from glob import glob
+# from collections import defaultdict
+# from sentence_transformers import SentenceTransformer
+# import faiss
+# import numpy as np
+# from rank_bm25 import BM25Okapi
+
+# DATA_DIR = "data"
+# OUTPUT_DIR = "output"
+
 import os
 import re
 import json
@@ -9,8 +23,11 @@ import faiss
 import numpy as np
 from rank_bm25 import BM25Okapi
 
-DATA_DIR = "data"
-OUTPUT_DIR = "output"
+# ---------- FIXED PATHS ----------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DATA_DIR = os.path.join(BASE_DIR, "data")
+OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 
 def setup_output_dir():
     if not os.path.exists(OUTPUT_DIR):
