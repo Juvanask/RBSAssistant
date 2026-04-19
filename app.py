@@ -83,15 +83,27 @@ import subprocess
 from retrieval import Retriever
 from generator import RAGGenerator
 
-# ---------- STEP 1: Ensure index exists ----------
 INDEX_FILE = "output/vector_index.faiss"
 
 @st.cache_resource
 def setup_index():
     if not os.path.exists(INDEX_FILE):
-        with st.spinner("Setting up knowledge base for first time... ⏳"):
-            import ingest
-            ingest.main()   # make sure ingest.py has a main()
+        with st.spinner("Running ingest.py... ⏳"):
+            result = subprocess.run(
+                ["python3", "ingest.py"],
+                capture_output=True,
+                text=True
+            )
+            
+            # 🔥 SHOW LOGS
+            st.text("STDOUT:\n" + result.stdout)
+            st.text("STDERR:\n" + result.stderr)
+
+            if result.returncode != 0:
+                st.error("ingest.py FAILED ❌")
+                st.stop()
+
+setup_index()
 
 # ---------- STEP 2: Load system ----------
 @st.cache_resource
