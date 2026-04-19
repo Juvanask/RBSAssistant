@@ -1,33 +1,19 @@
-# import os
-# import re
-# import json
-# import pickle
-# from glob import glob
-# from collections import defaultdict
-# from sentence_transformers import SentenceTransformer
-# import faiss
-# import numpy as np
-# from rank_bm25 import BM25Okapi
-
-# DATA_DIR = "data"
-# OUTPUT_DIR = "output"
-
 import os
 import re
 import json
 import pickle
 from glob import glob
-from collections import defaultdict
-from sentence_transformers import SentenceTransformer
+from fastembed import TextEmbedding
 import faiss
 import numpy as np
 from rank_bm25 import BM25Okapi
 
 # ---------- FIXED PATHS ----------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
 DATA_DIR = os.path.join(BASE_DIR, "data")
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
+
+model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
 def setup_output_dir():
     if not os.path.exists(OUTPUT_DIR):
@@ -37,11 +23,9 @@ def parse_file(filepath):
     with open(filepath, 'r', encoding='utf-8') as f:
         content = f.read()
 
-    # Split by the separator used in the text files
     blocks = content.split("========================================================================")
     
     documents = []
-    # Try to extract category from the top block
     top_header = blocks[0]
     category_match = re.search(r'# Category:\s*(.*)', top_header)
     category = category_match.group(1).strip() if category_match else "general"
@@ -51,7 +35,6 @@ def parse_file(filepath):
         if not block:
             continue
         
-        # Parse basic metadata: ## section, URL:, Description:, Title:
         section_match = re.search(r'^##\s*(.*?)\n', block)
         url_match = re.search(r'URL:\s*(.*?)\n', block)
         desc_match = re.search(r'Description:\s*(.*?)\n', block)
@@ -82,7 +65,6 @@ def extract_structured_data(docs):
         text = doc["raw_text"]
         cat = doc["category"]
 
-        # Extract Emails for Contacts
         if cat in ["contacts", "general"]:
             emails = re.findall(r'[\w\.-]+@business\.rutgers\.edu', text)
             if emails:
@@ -93,7 +75,6 @@ def extract_structured_data(docs):
                     "url": doc["url"]
                 })
         
-        # Extract Dates for Events (naive regex for dates like Mar 28, 2026)
         if cat == "events":
             dates = re.findall(r'[A-Z][a-z]{2}\s\d{1,2},\s\d{4}', text)
             if dates:
@@ -103,7 +84,6 @@ def extract_structured_data(docs):
                     "url": doc["url"]
                 })
         
-        # Extract Requirements for requirements.txt (search for 'credits')
         if cat == "requirements":
             credits_mention = re.findall(r'(\d+)\s*credits', text, re.IGNORECASE)
             if credits_mention:
@@ -132,10 +112,7 @@ def chunk_text(text, chunk_size=300, overlap=50):
     return chunks
 
 def build_index(all_docs):
-    model = SentenceTransformer('all-MiniLM-L6-v2')
-    
     chunked_data = []
-    # Build text chunks
     for doc in all_docs:
         chunks = chunk_text(doc["raw_text"])
         for c in chunks:
@@ -150,28 +127,25 @@ def build_index(all_docs):
     print(f"Total chunks generated: {len(chunked_data)}")
     
     # 1. FAISS Index (Dense)
-    print("Computing embeddings...")
+    print("Computing embeddings via fastembed...")
     texts_to_embed = [item["metadata_prefix"] + item["text"] for item in chunked_data]
-    embeddings = model.encode(texts_to_embed, show_progress_bar=True, convert_to_numpy=True)
+    embeddings = np.array(list(model.embed(texts_to_embed)))
     
     dimension = embeddings.shape[1]
     faiss_index = faiss.IndexFlatL2(dimension)
     faiss_index.add(embeddings)
-    
     faiss.write_index(faiss_index, os.path.join(OUTPUT_DIR, "vector_index.faiss"))
     
     # 2. BM25 Index (Sparse)
     tokenized_corpus = [text.lower().split() for text in texts_to_embed]
     bm25 = BM25Okapi(tokenized_corpus)
     
-    # Save artifacts
     with open(os.path.join(OUTPUT_DIR, "chunked_data.pkl"), "wb") as f:
         pickle.dump(chunked_data, f)
-        
     with open(os.path.join(OUTPUT_DIR, "bm25_index.pkl"), "wb") as f:
         pickle.dump(bm25, f)
         
-    print("Indexes built entirely and saved to /output folder.")
+    print("Indexes built and saved to /output folder.")
 
 if __name__ == "__main__":
     setup_output_dir()
