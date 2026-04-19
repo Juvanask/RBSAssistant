@@ -90,9 +90,8 @@ INDEX_FILE = "output/vector_index.faiss"
 def setup_index():
     if not os.path.exists(INDEX_FILE):
         with st.spinner("Setting up knowledge base for first time... ⏳"):
-            subprocess.run(["python3", "ingest.py"], check=True)
-
-setup_index()
+            import ingest
+            ingest.main()   # make sure ingest.py has a main()
 
 # ---------- STEP 2: Load system ----------
 @st.cache_resource
